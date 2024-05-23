@@ -31,6 +31,7 @@ def main(stdscr):
     text = ""
     cursor_y, cursor_x = 0, 0
     scroll_offset = 0
+    min_lines_from_bottom = 7
 
     while True:
         stdscr.clear()
@@ -90,7 +91,7 @@ def main(stdscr):
                 if cursor_y < len(lines) - 1:
                     cursor_y += 1
                     cursor_x = min(cursor_x, len(lines[cursor_y]))
-                if cursor_y >= scroll_offset + max_y:
+                if cursor_y >= scroll_offset + max_y - min_lines_from_bottom:
                     scroll_offset += 1
 
         # Ensure the cursor position is valid
@@ -101,8 +102,8 @@ def main(stdscr):
         # Ensure the cursor is within the visible window
         if cursor_y - scroll_offset < 0:
             scroll_offset = cursor_y
-        elif cursor_y - scroll_offset >= max_y:
-            scroll_offset = cursor_y - max_y + 1
+        elif cursor_y - scroll_offset >= max_y - min_lines_from_bottom:
+            scroll_offset = cursor_y - max_y + min_lines_from_bottom
 
         # Redraw the screen
         stdscr.clear()
@@ -114,6 +115,8 @@ def main(stdscr):
                 stdscr.addstr(i, 0, line)
         stdscr.move(cursor_y - scroll_offset, cursor_x)
         stdscr.refresh()
+
+
 
 def start_editor():
     curses.wrapper(main)
