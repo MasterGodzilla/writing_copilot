@@ -18,12 +18,20 @@ def line_width(line):
 class Buffer:
     def __init__(self, lines):
         self.lines = lines
+        self.word_count = sum([len(line) for line in lines])
 
     def __len__(self):
         return len(self.lines)
 
     def __getitem__(self, index):
         return self.lines[index]
+    
+    # get all text before cursor
+    def prefix(self, cursor):
+        if cursor.row == 0:
+            return self.lines[0][:cursor.col]
+        return "\n".join(self.lines[:cursor.row]) + '\n' + self.lines[cursor.row][:cursor.col]
+        
 
     @property
     def bottom(self):
@@ -34,12 +42,14 @@ class Buffer:
         current = self.lines.pop(row)
         new = current[:col] + string + current[col:]
         self.lines.insert(row, new)
+        self.word_count += len(string)
 
     def split(self, cursor):
         row, col = cursor.row, cursor.col
         current = self.lines.pop(row)
         self.lines.insert(row, current[:col])
         self.lines.insert(row + 1, current[col:])
+        self.word_count += 1
 
     def delete(self, cursor):
         row, col = cursor.row, cursor.col
@@ -52,6 +62,7 @@ class Buffer:
             next = self.lines.pop(row)
             new = current + next
             self.lines.insert(row, new)
+        self.word_count -= 1
 
 
 def clamp(x, lower, upper):
@@ -80,6 +91,8 @@ class Cursor:
             self.row_offset += (line_width(buffer[self.row]))//self.n_cols
             self.row += 1
             self.col = clamp(self.col, 0, len(buffer[self.row]))
+        else:
+            self.col = len(buffer[self.row])
             
 
     def left(self, buffer):
@@ -198,6 +211,7 @@ def main(stdscr):
         display_str = f"cursor: {cursor.row}, {cursor.col}, {cursor.row_offset}"
         display_str += f", window: {window.row}, {window.row_offset}"
         display_str += f", buffer: {len(buffer)}, {len(buffer[cursor.row])}"
+        display_str += f", word count: {buffer.word_count}"
         stdscr.addstr(curses.LINES-1, 0, display_str)
             
         
