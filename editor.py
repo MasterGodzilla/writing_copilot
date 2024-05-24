@@ -3,6 +3,7 @@ import curses
 import sys
 import wcwidth
 import locale
+from utils import save_text, display_welcomepage, save_buffer
 
 # Ensure the locale is set to support UTF-8
 locale.setlocale(locale.LC_ALL, '')
@@ -42,15 +43,15 @@ class Buffer:
 
     def delete(self, cursor):
         row, col = cursor.row, cursor.col
-        if (row, col) < (self.bottom, len(self[row])):
-            current = self.lines.pop(row)
-            if col < len(self[row]):
-                new = current[:col] + current[col + 1:]
-                self.lines.insert(row, new)
-            else:
-                next = self.lines.pop(row)
-                new = current + next
-                self.lines.insert(row, new)
+        if col < len(self[row]): # if left did not move cursor up
+            current = self.lines.pop(row) 
+            new = current[:col] + current[col+1:]
+            self.lines.insert(row, new)
+        else: # if left moved cursor up
+            current = self.lines.pop(row) 
+            next = self.lines.pop(row)
+            new = current + next
+            self.lines.insert(row, new)
 
 
 def clamp(x, lower, upper):
@@ -64,51 +65,37 @@ def clamp(x, lower, upper):
 class Cursor:
     def __init__(self, row=0, col=0, col_hint=None):
         self.row = row
-        self._col = col
-        # col_hint is used to keep track of the column when moving up or down
-        self._col_hint = col if col_hint is None else col_hint
+        self.col = col
         self.row_offset = 0
 
-    @property
-    def col(self):
-        return self._col
 
-    @col.setter
-    def col(self, col):
-        self._col = col
-        self._col_hint = col
-
-
-    # this method is used to keep the cursor column within the bounds of the line
-    def _clamp_col(self, buffer):
-        self._col = min(self._col_hint, len(buffer[self.row]))
-
-    def up(self, buffer, n_cols):
+    def up(self, buffer):
         if self.row > 0:
             self.row -= 1
-            self._clamp_col(buffer)
-            self.row_offset -= line_width(buffer[self.row])//self.n_cols
+            self.row_offset -= (line_width(buffer[self.row]))//self.n_cols
+            self.col = clamp(self.col, 0, len(buffer[self.row]))
 
     def down(self, buffer):
         if self.row < len(buffer) - 1:
+            self.row_offset += (line_width(buffer[self.row]))//self.n_cols
             self.row += 1
-            self._clamp_col(buffer)
-            self.row_offset += line_width(buffer[self.row])//self.n_cols
+            self.col = clamp(self.col, 0, len(buffer[self.row]))
+            
 
     def left(self, buffer):
         if self.col > 0:
             self.col -= 1
         elif self.row > 0:
             self.row -= 1
-            self.row_offset -= line_width(buffer[self.row])//self.n_cols
+            self.row_offset -= (line_width(buffer[self.row]))//self.n_cols
             self.col = len(buffer[self.row])
 
     def right(self, buffer):
         if self.col < len(buffer[self.row]):
             self.col += 1
-        elif self.row < len(buffer[self.row]) - 1:
+        elif self.row < len(buffer) - 1:
+            self.row_offset += (line_width(buffer[self.row]))//self.n_cols
             self.row += 1
-            self.row_offset += line_width(buffer[self.row])//self.n_cols
             self.col = 0
 
 
@@ -126,12 +113,14 @@ class Window:
     def up(self, buffer, cursor):
         if cursor.row == self.row - 1 and self.row > 0:
             self.row -= 1
-            self.row_offset += line_width(buffer[cursor.row])//self.n_cols
+            self.row_offset += (line_width(buffer[self.row]))//self.n_cols
 
     def down(self, buffer, cursor):
-        if cursor.row == self.bottom + 1 and self.bottom < len(buffer) - 1:
+        line_height = (line_width(buffer[cursor.row]))//self.n_cols
+        while self.translate(cursor, buffer)[0] + line_height >= self.n_rows - 1 :
+            self.row_offset -= (line_width(buffer[self.row]))//self.n_cols
             self.row += 1
-            self.row_offset -= line_width(buffer[cursor.row])//self.n_cols
+            
 
     # def horizontal_scroll(self, cursor, left_margin=5, right_margin=2):
     #     n_pages = cursor.col // (self.n_cols - right_margin)
@@ -140,7 +129,7 @@ class Window:
     def translate(self, cursor, buffer):
         display_row = cursor.row - self.row + self.row_offset + cursor.row_offset
         lw = line_width(buffer[cursor.row][:cursor.col])
-        return display_row + lw//self.n_cols, lw % self.n_cols
+        return display_row + (lw)//self.n_cols, lw % self.n_cols
 
 
 def left(window, buffer, cursor):
@@ -176,49 +165,115 @@ def main(stdscr):
         #     stdscr.addstr(row, 0, line)
 
         window.n_cols = curses.COLS - 1
-        window.n_rows = curses.LINES - 1
+        window.n_rows = curses.LINES - 2
         cursor.n_cols = curses.COLS - 1
 
+        display_rows = 0
         for row, line in enumerate(buffer[window.row:]):
-            # # split line into chunks that fit the window
-            # chunks = [line[i:i + window.n_cols] for i in range(0, len(line), window.n_cols-1)]
-            # if display_rows + len(chunks) >= window.n_rows:
-            #     break 
-            # for i, chunk in enumerate(chunks):
-            #     stdscr.addstr(display_rows + i, 0, chunk)
-            # display_rows += len(chunks)+1
-            stdscr.addstr(row, 0, line)
+            # split line into chunks that fit the window by line_width
+            chunks = []
+            # remove all \n
+            line = line.strip()
+            while True:
+                chunk = ""
+                chunk_width = 0
+                while line and chunk_width < window.n_cols - 1:
+                    chunk += line[0]
+                    line = line[1:]
+                    chunk_width += char_width(chunk[-1])
+                chunks.append(chunk)
+                if not line:
+                    break
+            
+            for i, chunk in enumerate(chunks):
+                if display_rows + i < window.n_rows:
+                    stdscr.addstr(display_rows + i, 0, chunk)
+                else: 
+                    break
+            display_rows += len(chunks)
+            # display_rows += line_width(line)//window.n_cols + 1
+            # if display_rows >= window.n_rows:
+            #     break
+            # stdscr.addstr(row, 0, line)
+        display_str = f"cursor: {cursor.row}, {cursor.col}, {cursor.row_offset}"
+        display_str += f", window: {window.row}, {window.row_offset}"
+        display_str += f", buffer: {len(buffer)}, {len(buffer[cursor.row])}"
+        stdscr.addstr(curses.LINES-1, 0, display_str)
+            
         
         stdscr.move(*window.translate(cursor, buffer))
 
-        k = stdscr.getkey()
-        if k == "\x1b":
-            sys.exit(0)
-        elif k == "KEY_LEFT":
-            left(window, buffer, cursor)
-        elif k == "KEY_DOWN":
-            cursor.down(buffer)
-            window.down(buffer, cursor)
-            # window.horizontal_scroll(cursor)
-        elif k == "KEY_UP":
-            cursor.up(buffer)
-            window.up(cursor, buffer)
-            # window.horizontal_scroll(cursor)
-        elif k == "KEY_RIGHT":
-            right(window, buffer, cursor)
-        elif k == "\n":
-            buffer.split(cursor)
-            right(window, buffer, cursor)
-        elif k in ("KEY_DELETE", "\x04"):
-            buffer.delete(cursor)
-        elif k in ("KEY_BACKSPACE", "\x7f"):
-            if (cursor.row, cursor.col) > (0, 0):
+        # k = stdscr.getkey()
+        # # k = stdscr.get_wch()
+        # if k == "\x1b":
+        #     save_buffer(buffer, stdscr)
+        #     sys.exit(0)
+        # elif k == "KEY_LEFT":
+        #     left(window, buffer, cursor)
+        # elif k == "KEY_DOWN":
+        #     cursor.down(buffer)
+        #     window.down(buffer, cursor)
+        #     # window.horizontal_scroll(cursor)
+        # elif k == "KEY_UP":
+        #     cursor.up(buffer)
+        #     window.up(buffer, cursor)
+        #     # window.horizontal_scroll(cursor)
+        # elif k == "KEY_RIGHT":
+        #     right(window, buffer, cursor)
+        # elif k == "\n":
+        #     buffer.split(cursor)
+        #     right(window, buffer, cursor)
+        # elif k in ("KEY_DELETE", "\x04","KEY_BACKSPACE", "\x7f"):
+        #     if cursor.col > 0 or cursor.row > 0:
+        #         left(window, buffer, cursor)
+        #         buffer.delete(cursor)
+        k = stdscr.get_wch()  # Use get_wch instead of getkey
+
+        if isinstance(k, str):
+            if k == "\x1b":  # ESC key
+                save_buffer(buffer, stdscr)
+                sys.exit(0)
+            elif k == "KEY_LEFT":
                 left(window, buffer, cursor)
-                buffer.delete(cursor)
-        else:
-            buffer.insert(cursor, k)
-            for _ in k:
+            elif k == "KEY_DOWN":
+                cursor.down(buffer)
+                window.down(buffer, cursor)
+            elif k == "KEY_UP":
+                cursor.up(buffer)
+                window.up(buffer, cursor)
+            elif k == "KEY_RIGHT":
                 right(window, buffer, cursor)
+            elif k == "\n":  # Enter key
+                buffer.split(cursor)
+                right(window, buffer, cursor)
+            elif k in ("KEY_DELETE", "\x04", "KEY_BACKSPACE", "\x7f"):
+                if cursor.col > 0 or cursor.row > 0:
+                    left(window, buffer, cursor)
+                    buffer.delete(cursor)
+            else:
+                buffer.insert(cursor, k)
+                for _ in k:
+                    right(window, buffer, cursor)
+
+        elif isinstance(k, int):
+            if k == curses.KEY_LEFT:
+                left(window, buffer, cursor)
+            elif k == curses.KEY_DOWN:
+                cursor.down(buffer)
+                window.down(buffer, cursor)
+            elif k == curses.KEY_UP:
+                cursor.up(buffer)
+                window.up(buffer, cursor)
+            elif k == curses.KEY_RIGHT:
+                right(window, buffer, cursor)
+            elif k == curses.KEY_DC or k == curses.KEY_BACKSPACE:
+                if cursor.col > 0 or cursor.row > 0:
+                    left(window, buffer, cursor)
+                    buffer.delete(cursor)
+                
+            
+                
+        
 
 
 if __name__ == "__main__":
