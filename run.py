@@ -62,8 +62,36 @@ def completion(prompt: str,
         stop=stop,
     )
     return response.choices[0].text
-    # return response
+
+import openai
+
+def openai_completion(prompt: str, 
+                      model: str = "Qwen/Qwen1.5-110B-Chat", 
+                      max_tokens: int = 1000,
+                      temperature: float = 0.6,
+                      stop: List[str] = ["</s>"],
+                      logit_bias: Dict[str, float] = {},
+                      log_probs: int = 0,
+                      ):
+
+
+    client = openai.OpenAI(
+        api_key=os.environ.get("TOGETHER_API_KEY"),
+        base_url="https://api.together.xyz/v1",
+        )
+    response = client.completions.create(
+        model=model,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        stop=stop,
+        logit_bias=logit_bias,
+        log_probs=log_probs,
+    )   
+    return response.choices[0].text
 
 if __name__ == "__main__":
-    prompt="What are the top things to do in San Francisco?"
-    print(completion(prompt, max_tokens=10))
+    while True:
+        prompt = input("Enter a prompt: ")
+        result = completion(prompt)
+        print(result)

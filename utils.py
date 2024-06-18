@@ -1,7 +1,9 @@
 import curses
+import concurrent.futures
 import locale
 # Ensure the locale is set to support UTF-8
 locale.setlocale(locale.LC_ALL, '')
+
 
 def save_buffer(buffer, stdscr):
     text = "\n".join(buffer)
@@ -12,7 +14,7 @@ def save_text(text, stdscr):
     while True:
         stdscr.erase()
         # highlight cursor position with a special character
-        stdscr.addstr("Enter the file name: "+file_name+"█")
+        stdscr.addstr("Enter the file name: "+file_name)
         key = stdscr.get_wch()
 
         if isinstance(key, str):

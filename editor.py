@@ -31,6 +31,11 @@ class Buffer:
         if cursor.row == 0:
             return self.lines[0][:cursor.col]
         return "\n".join(self.lines[:cursor.row]) + '\n' + self.lines[cursor.row][:cursor.col]
+
+    def suffix(self, cursor):
+        if cursor.row == len(self) - 1:
+            return self[cursor.row][cursor.col:]
+        return self[cursor.row][cursor.col:] + "\n".join(self.lines[cursor.row + 1:])
         
 
     @property
@@ -74,10 +79,11 @@ def clamp(x, lower, upper):
 
 
 class Cursor:
-    def __init__(self, row=0, col=0, col_hint=None):
+    def __init__(self, n_cols, row=0, col=0, col_hint=None):
         self.row = row
         self.col = col
         self.row_offset = 0
+        self.n_cols = n_cols
 
 
     def up(self, buffer):
@@ -142,153 +148,161 @@ class Window:
     def translate(self, cursor, buffer):
         display_row = cursor.row - self.row + self.row_offset + cursor.row_offset
         lw = line_width(buffer[cursor.row][:cursor.col])
-        return display_row + (lw)//self.n_cols, lw % self.n_cols
+        return display_row + (lw)//self.n_cols, lw % (self.n_cols-1)
 
 
-def left(window, buffer, cursor):
-    cursor.left(buffer)
-    window.up(buffer, cursor)
-    # window.horizontal_scroll(cursor)
+
+class Editor:
+    def __init__(self, stdscr, filename, keypresses_list = None, func_after_keypress = None, func_before_keypress = None):
+        self.stdscr = stdscr
+        self.window = Window(curses.LINES - 1, curses.COLS - 1)
+        self.cursor = Cursor(n_cols = curses.COLS-1)
+        if filename:
+            self.buffer = Buffer(self.read_file().splitlines())
+        else:
+            self.buffer = Buffer([""])
+        self.keypresses_list = keypresses_list
+        self.func_after_keypress = func_after_keypress
+        self.func_before_keypress = func_before_keypress
 
 
-def right(window, buffer, cursor):
-    cursor.right(buffer)
-    window.down(buffer, cursor)
-    # window.horizontal_scroll(cursor)
+    def read_file(self):
+        with open(self.args.filename) as f:
+            return f.read()
 
-
-def main(stdscr):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("filename")
-    args = parser.parse_args()
-
-    with open(args.filename) as f:
-        buffer = Buffer(f.read().splitlines())
-
-    window = Window(curses.LINES - 1, curses.COLS - 1)
-    cursor = Cursor()
-
-    while True:
-        stdscr.erase()
-        # for row, line in enumerate(buffer[window.row:window.row + window.n_rows]):
-        #     if row == cursor.row - window.row and window.col > 0:
-        #         line = "«" + line[window.col + 1:]
-        #     if len(line) > window.n_cols:
-        #         line = line[:window.n_cols - 1] + "»"
-        #     stdscr.addstr(row, 0, line)
-
-        window.n_cols = curses.COLS - 1
-        window.n_rows = curses.LINES - 2
-        cursor.n_cols = curses.COLS - 1
-
+    def display_buffer(self):
+        self.stdscr.erase()
         display_rows = 0
-        for row, line in enumerate(buffer[window.row:]):
-            # split line into chunks that fit the window by line_width
+        for row, line in enumerate(self.buffer[self.window.row:]):
             chunks = []
-            # remove all \n
             line = line.strip()
             while True:
                 chunk = ""
                 chunk_width = 0
-                while line and chunk_width < window.n_cols - 1:
+                while line and chunk_width < self.window.n_cols - 1:
                     chunk += line[0]
                     line = line[1:]
                     chunk_width += char_width(chunk[-1])
                 chunks.append(chunk)
                 if not line:
                     break
-            
+
             for i, chunk in enumerate(chunks):
-                if display_rows + i < window.n_rows:
-                    stdscr.addstr(display_rows + i, 0, chunk)
-                else: 
+                if display_rows + i < self.window.n_rows:
+                    self.stdscr.addstr(display_rows + i, 0, chunk)
+                else:
                     break
             display_rows += len(chunks)
-            # display_rows += line_width(line)//window.n_cols + 1
-            # if display_rows >= window.n_rows:
-            #     break
-            # stdscr.addstr(row, 0, line)
-        display_str = f"cursor: {cursor.row}, {cursor.col}, {cursor.row_offset}"
-        display_str += f", window: {window.row}, {window.row_offset}"
-        display_str += f", buffer: {len(buffer)}, {len(buffer[cursor.row])}"
-        display_str += f", word count: {buffer.word_count}"
-        stdscr.addstr(curses.LINES-1, 0, display_str)
-            
-        
-        stdscr.move(*window.translate(cursor, buffer))
 
-        # k = stdscr.getkey()
-        # # k = stdscr.get_wch()
-        # if k == "\x1b":
-        #     save_buffer(buffer, stdscr)
-        #     sys.exit(0)
-        # elif k == "KEY_LEFT":
-        #     left(window, buffer, cursor)
-        # elif k == "KEY_DOWN":
-        #     cursor.down(buffer)
-        #     window.down(buffer, cursor)
-        #     # window.horizontal_scroll(cursor)
-        # elif k == "KEY_UP":
-        #     cursor.up(buffer)
-        #     window.up(buffer, cursor)
-        #     # window.horizontal_scroll(cursor)
-        # elif k == "KEY_RIGHT":
-        #     right(window, buffer, cursor)
-        # elif k == "\n":
-        #     buffer.split(cursor)
-        #     right(window, buffer, cursor)
-        # elif k in ("KEY_DELETE", "\x04","KEY_BACKSPACE", "\x7f"):
-        #     if cursor.col > 0 or cursor.row > 0:
-        #         left(window, buffer, cursor)
-        #         buffer.delete(cursor)
-        k = stdscr.get_wch()  # Use get_wch instead of getkey
+    def translate_cursor(self):
+        self.stdscr.move(*self.window.translate(self.cursor, self.buffer))
 
+    def left(self):
+        self.cursor.left(self.buffer)
+        self.window.up(self.buffer, self.cursor)
+    
+    def right(self):
+        self.cursor.right(self.buffer)
+        self.window.down(self.buffer, self.cursor)
+    """
+    add special keypresses to customize functionalities. 
+    it does not handle the keypresses, just add them as Editor attributes
+    input: 
+        List of dictionary with entries 
+            key: str or int, 
+            func: a callable that takes three inputs: window, buffer, and cursor
+            description: (str)
+    """
+    def handle_keypress(self, k):
+        special_keypress = False
+        # add special keypresses
+        if self.keypresses_list is not None:
+            for keypress in self.keypresses_list:
+                if k in keypress["key"]:
+                    keypress["func"](self)
+                    special_keypress = True
         if isinstance(k, str):
-            if k == "\x1b":  # ESC key
-                save_buffer(buffer, stdscr)
+            if k == "\x1b" or k == "\x05":
+                save_buffer(self.buffer, self.stdscr)
                 sys.exit(0)
             elif k == "KEY_LEFT":
-                left(window, buffer, cursor)
+                self.left()
             elif k == "KEY_DOWN":
-                cursor.down(buffer)
-                window.down(buffer, cursor)
+                self.cursor.down(self.buffer)
+                self.window.down(self.buffer, self.cursor)
             elif k == "KEY_UP":
-                cursor.up(buffer)
-                window.up(buffer, cursor)
+                self.cursor.up(self.buffer)
+                self.window.up(self.buffer, self.cursor)
             elif k == "KEY_RIGHT":
-                right(window, buffer, cursor)
-            elif k == "\n":  # Enter key
-                buffer.split(cursor)
-                right(window, buffer, cursor)
+                self.right()
+            elif k == "\n":
+                self.buffer.split(self.cursor)
+                self.right()
             elif k in ("KEY_DELETE", "\x04", "KEY_BACKSPACE", "\x7f"):
-                if cursor.col > 0 or cursor.row > 0:
-                    left(window, buffer, cursor)
-                    buffer.delete(cursor)
-            else:
-                buffer.insert(cursor, k)
+                if self.cursor.col > 0 or self.cursor.row > 0:
+                    self.left()
+                    self.buffer.delete(self.cursor)
+            elif not special_keypress:
+                self.buffer.insert(self.cursor, k)
                 for _ in k:
-                    right(window, buffer, cursor)
+                    self.right()
+            
 
         elif isinstance(k, int):
             if k == curses.KEY_LEFT:
-                left(window, buffer, cursor)
+                self.left()
             elif k == curses.KEY_DOWN:
-                cursor.down(buffer)
-                window.down(buffer, cursor)
+                self.cursor.down(self.buffer)
+                self.window.down(self.buffer, self.cursor)
             elif k == curses.KEY_UP:
-                cursor.up(buffer)
-                window.up(buffer, cursor)
+                self.cursor.up(self.buffer)
+                self.window.up(self.buffer, self.cursor)
             elif k == curses.KEY_RIGHT:
-                right(window, buffer, cursor)
+                self.right()
             elif k == curses.KEY_DC or k == curses.KEY_BACKSPACE:
-                if cursor.col > 0 or cursor.row > 0:
-                    left(window, buffer, cursor)
-                    buffer.delete(cursor)
-                
-            
-                
-        
+                if self.cursor.col > 0 or self.cursor.row > 0:
+                    self.left()
+                    self.buffer.delete(self.cursor)
 
+    def run(self):
+        while True:
+            self.display_buffer()
+            self.translate_cursor()
+            k = self.stdscr.get_wch()
+            if self.func_before_keypress:
+                self.func_before_keypress(self)
+            self.handle_keypress(k)
+            if self.func_after_keypress:
+                self.func_after_keypress(self)
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("filename", nargs="?")
+    return parser.parse_args()
+
+def main(stdscr):
+    args = parse_args()
+    """
+    def add_user_token(editor):
+        user_token = "<|user|>"
+        editor.buffer.insert(editor.cursor, user_token)
+        for _ in user_token:
+            editor.right()
+            editor.cursor.right(editor.buffer)
+    
+    
+    keypresses_list = [
+        {
+            # ctrl + u
+            "key": ["\x15", "\n"],
+            "func": add_user_token,
+            "description": "Add user token"
+        }
+    ]
+    editor = Editor(stdscr, args.filename, keypresses_list, func_before_keypress=add_user_token)
+    """
+    editor = Editor(stdscr, args.filename)
+    editor.run()
 
 if __name__ == "__main__":
     curses.wrapper(main)
