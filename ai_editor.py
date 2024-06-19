@@ -4,31 +4,24 @@ import sys
 import wcwidth
 import locale
 from utils import save_text, display_welcomepage, save_buffer
-from copilot import TogetherCopilot
+from copilot import TogetherCopilot, get_copilot
 # from editor import Buffer, Cursor, Window, char_width, left, right, Editor
 from editor import Editor
 
 # Ensure the locale is set to support UTF-8
 locale.setlocale(locale.LC_ALL, '')
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("filename", nargs='?', default="")
-    return parser.parse_args()
-
 def add_user_token(editor):
     user_token = " user\n"
     editor.buffer.insert(editor.cursor, user_token)
     for _ in user_token:
         editor.right()
-        editor.cursor.right(editor.buffer)
 
 def add_end_token(editor):
     end_token = "\n"
     editor.buffer.insert(editor.cursor, end_token)
     for _ in end_token:
         editor.right()
-        editor.cursor.right(editor.buffer)
 
 def copilot(editor, copilot):
     response = copilot(editor.buffer.prefix(editor.cursor), editor.buffer.suffix(editor.cursor))
@@ -40,7 +33,6 @@ def copilot(editor, copilot):
         else:
             editor.buffer.insert(editor.cursor, char)
         editor.right()
-        editor.cursor.right(editor.buffer)
 
 def remove_completion(editor):
     if editor.draft_len > 0:  # Access the draft_len attribute of the editor object
@@ -62,10 +54,25 @@ def update_draft_len(editor):
     if not editor.keep_draft:
         editor.draft_len = 0
 
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("filename", nargs='?', default="")
+    # add arguments --model --provider --sliding_window(default -1)
+    parser.add_argument("--model", type=str, default="Qwen/Qwen2-72B-Instruct")
+    # parser.add_argument("--model_type", type=str, default="chat")
+    parser.add_argument("--sliding_window", type=int, default=-1)
+    parser.add_argument("--provider", type=str, default=None)
+    return parser.parse_args()
+
+
 def main(stdscr):
     args = parse_args()
 
-    copilot_instance = TogetherCopilot(model="Qwen/Qwen2-72B-Instruct", model_type="chat", sliding_window=500)
+    # copilot_instance = TogetherCopilot(model="Qwen/Qwen2-72B-Instruct", model_type="chat", sliding_window=500)
+    copilot_instance = get_copilot(model = args.model, 
+                                    provider = args.provider, 
+                                    sliding_window = args.sliding_window)
 
     keypresses_list = [
         {
@@ -96,7 +103,9 @@ def main(stdscr):
         }
     ]
     
-    editor = Editor(stdscr, args.filename, keypresses_list, func_after_keypress=update_draft_len,func_before_keypress=set_keep_draft)
+    editor = Editor(stdscr, args.filename, keypresses_list, 
+                    func_after_keypress=update_draft_len,
+                    func_before_keypress=set_keep_draft)
     editor.draft_len = 0  # Add a draft_len attribute to the editor object
     editor.keep_draft = False  # Add a keep_draft attribute to the editor object
     editor.run()

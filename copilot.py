@@ -87,6 +87,10 @@ class Copilot(ABC):
 
 class TogetherCopilot(Copilot):
 
+    supported_models = ["Qwen/Qwen1.5-32B",
+                        "Qwen/Qwen1.5-32B-chat",
+                        "Qwen/Qwen2-72B-Instruct",
+                        ]
     def __init__(self, 
                     sliding_window: int = -1,
                     fill_len: int = 7,
@@ -147,16 +151,93 @@ class TogetherCopilot(Copilot):
         print_to_log ("response: "+ response)
         return response
 
-class GeminiCopilot(Copilot):
+def check_overlap(text, response):
+    # Determine the maximum length of overlap to check
+    max_overlap = min(len(text), len(response))
+    
+    # Iterate through possible lengths of overlap from max to 1
+    for length in range(max_overlap, 0, -1):
+        if text[-length:] == response[:length]:
+            return length  # Return the length of the overlap if found
+    
+    return 0
 
-        def __init__(self, 
-                        sliding_window: int = -1,
-                        fill_len: int = 7,
-                        system_prompt: str = "",
-                        model: str = "flash", # "flash" or "pro"
-                        ):
-            super().__init__(sliding_window, fill_len, system_prompt)
-            self.model = model
+import google.generativeai as genai
+import os
+genai.configure(api_key=os.environ.get('GOOGLE_API_KEY'))
+class GeminiCopilot(Copilot):
+    supported_models = ["gemini-1.5-flash", "gemini-1.5-pro"]
+    def __init__(self, 
+                    sliding_window: int = -1,
+                    fill_len: int = 7,
+                    system_prompt: str = "",
+                    model: str = "gemini-1.5-flash", # "flash" or "pro"
+                    ):
+        super().__init__(sliding_window, fill_len, system_prompt)
+        self.model = model
         
-        def __call__(self, text, suffix: str = '') -> str:
-            pass
+        
+    
+    def __call__(self, text, suffix: str = '') -> str:
+        if self.system_prompt:
+            gen_model = genai.GenerativeModel(self.model,
+                                            system_instruction=self.system_prompt)
+        else:
+            gen_model = genai.GenerativeModel(self.model)
+
+        # message = [{"role": "system", "parts": [self.system_prompt]}]
+        message = []
+        default_user_prompt = "给我写一段小说"
+        message.append({"role": "user", "parts": [default_user_prompt]}) 
+        message.append({"role": "model", "parts": [text]})
+        # we first find the last paragraph in the text. if there is, we use it in the continuation prompt
+        # else, we use the default continuation prompt
+        last_paragraph_index = text.rfind("\n\n")
+        if last_paragraph_index != -1:
+            continuation_prompt = "继续，从这里开始：" + text[last_paragraph_index:]
+        else:
+            continuation_prompt = "继续"
+        message.append({"role": "user", "parts": [continuation_prompt]})
+        response = gen_model.generate_content(message,
+                                              safety_settings={'HARASSMENT':'block_none',
+                                                   'SEXUALLY_EXPLICIT': 'block_none',
+                                                   'HATE_SPEECH': 'block_none',
+                                                   'DANGEROUS': 'block_none',},
+                                              generation_config=genai.types.GenerationConfig(
+                                                    # candidate_count=1,
+                                                    # stop_sequences=['x'],
+                                                    max_output_tokens=self.fill_len+50,
+                                                    temperature=0.5)
+                                              ).text
+
+        print_to_log ("message:"+ str(message))
+        print_to_log ("response: "+ response)
+
+        overlap = check_overlap(text, response)
+        response = response[overlap:]
+
+        return response
+
+
+def get_copilot(model=None, provider=None, sliding_window=-1, fill_len=7, system_prompt = ''):
+    """
+    returns a copilot object based on the provider
+    """
+    # create a list of models that are supported by each provider
+    
+    if model is None:
+        model = "Qwen/Qwen2-72B-Instruct"
+        provider = "together"
+    else:
+        if model in TogetherCopilot.supported_models:
+            provider = "together"
+        elif model in GeminiCopilot.supported_models:
+            provider = "gemini"
+        else:
+            raise ValueError("Model not supported by any provider")
+
+    if provider == "gemini":
+        return GeminiCopilot(sliding_window=sliding_window, fill_len=fill_len, system_prompt=system_prompt, model=model)
+    if provider == "together":
+        return TogetherCopilot(sliding_window=sliding_window, fill_len=fill_len, system_prompt=system_prompt, model=model)
+    

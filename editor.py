@@ -158,7 +158,7 @@ class Editor:
         self.window = Window(curses.LINES - 1, curses.COLS - 1)
         self.cursor = Cursor(n_cols = curses.COLS-1)
         if filename:
-            self.buffer = Buffer(self.read_file().splitlines())
+            self.buffer = Buffer(self.read_file(filename).splitlines())
         else:
             self.buffer = Buffer([""])
         self.keypresses_list = keypresses_list
@@ -166,8 +166,8 @@ class Editor:
         self.func_before_keypress = func_before_keypress
 
 
-    def read_file(self):
-        with open(self.args.filename) as f:
+    def read_file(self, filename):
+        with open(filename) as f:
             return f.read()
 
     def display_buffer(self):
