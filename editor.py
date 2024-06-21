@@ -89,12 +89,12 @@ class Cursor:
     def up(self, buffer):
         if self.row > 0:
             self.row -= 1
-            self.row_offset -= (line_width(buffer[self.row]))//self.n_cols
+            self.row_offset -= (line_width(buffer[self.row])+1)//self.n_cols
             self.col = clamp(self.col, 0, len(buffer[self.row]))
 
     def down(self, buffer):
         if self.row < len(buffer) - 1:
-            self.row_offset += (line_width(buffer[self.row]))//self.n_cols
+            self.row_offset += (line_width(buffer[self.row])+1)//self.n_cols
             self.row += 1
             self.col = clamp(self.col, 0, len(buffer[self.row]))
         else:
@@ -106,14 +106,14 @@ class Cursor:
             self.col -= 1
         elif self.row > 0:
             self.row -= 1
-            self.row_offset -= (line_width(buffer[self.row]))//self.n_cols
+            self.row_offset -= (line_width(buffer[self.row])+1)//self.n_cols
             self.col = len(buffer[self.row])
 
     def right(self, buffer):
         if self.col < len(buffer[self.row]):
             self.col += 1
         elif self.row < len(buffer) - 1:
-            self.row_offset += (line_width(buffer[self.row]))//self.n_cols
+            self.row_offset += (line_width(buffer[self.row])+1)//self.n_cols
             self.row += 1
             self.col = 0
 
@@ -132,12 +132,12 @@ class Window:
     def up(self, buffer, cursor):
         if cursor.row == self.row - 1 and self.row > 0:
             self.row -= 1
-            self.row_offset += (line_width(buffer[self.row]))//self.n_cols
+            self.row_offset += (line_width(buffer[self.row])+1)//self.n_cols
 
     def down(self, buffer, cursor):
         line_height = (line_width(buffer[cursor.row]))//self.n_cols
         while self.translate(cursor, buffer)[0] + line_height >= self.n_rows - 1 :
-            self.row_offset -= (line_width(buffer[self.row]))//self.n_cols
+            self.row_offset -= (line_width(buffer[self.row])+1)//self.n_cols
             self.row += 1
             
 
@@ -147,15 +147,27 @@ class Window:
 
     def translate(self, cursor, buffer):
         display_row = cursor.row - self.row + self.row_offset + cursor.row_offset
-        lw = line_width(buffer[cursor.row][:cursor.col])
-        return display_row + (lw)//self.n_cols, lw % (self.n_cols-1)
+        line_start = 0
+        lw = 0
+        for cursor_col in range(cursor.col):
+            # lw = line_width(buffer[cursor.row][line_start:cursor_col+1])
+            lw += char_width(buffer[cursor.row][cursor_col])
+            if lw < self.n_cols:
+                continue
+            display_row += 1
+            # line_start = cursor_col + 1 
+            lw = 0
+        return display_row, lw
+
+        # lw = line_width(buffer[cursor.row][:cursor.col])
+        # return display_row + (lw)//(self.n_cols-1), lw % (self.n_cols-1)
 
 
 
 class Editor:
     def __init__(self, stdscr, filename, keypresses_list = None, func_after_keypress = None, func_before_keypress = None):
         self.stdscr = stdscr
-        self.window = Window(curses.LINES - 1, curses.COLS - 1)
+        self.window = Window(curses.LINES - 1, curses.COLS - 2)
         self.cursor = Cursor(n_cols = curses.COLS-1)
         if filename:
             self.buffer = Buffer(self.read_file(filename).splitlines())
@@ -175,11 +187,11 @@ class Editor:
         display_rows = 0
         for row, line in enumerate(self.buffer[self.window.row:]):
             chunks = []
-            line = line.strip()
+            line = line.strip() + " "
             while True:
                 chunk = ""
                 chunk_width = 0
-                while line and chunk_width < self.window.n_cols - 1:
+                while line and chunk_width < self.window.n_cols:
                     chunk += line[0]
                     line = line[1:]
                     chunk_width += char_width(chunk[-1])
@@ -193,6 +205,8 @@ class Editor:
                 else:
                     break
             display_rows += len(chunks)
+        # use last line to display col, row, row_offsets, word_count
+        self.stdscr.addstr(curses.LINES-1, 0, f"row: {self.cursor.row}, col: {self.cursor.col}, window_row_offset: {self.window.row_offset}, cursor_row_offset: {self.cursor.row_offset}, word_count: {self.buffer.word_count}")
 
     def translate_cursor(self):
         self.stdscr.move(*self.window.translate(self.cursor, self.buffer))
@@ -204,6 +218,19 @@ class Editor:
     def right(self):
         self.cursor.right(self.buffer)
         self.window.down(self.buffer, self.cursor)
+    
+    def insert(self, string):
+        for char in string:
+            if char == "\n":
+                self.buffer.split(self.cursor)
+            else:
+                self.buffer.insert(self.cursor, char)
+            self.right()
+
+    def goto_bottom(self):
+        while self.cursor.row < self.buffer.bottom or self.cursor.col < len(self.buffer[self.cursor.row]):
+            self.right()
+
     """
     add special keypresses to customize functionalities. 
     it does not handle the keypresses, just add them as Editor attributes
@@ -222,9 +249,13 @@ class Editor:
                     keypress["func"](self)
                     special_keypress = True
         if isinstance(k, str):
-            if k == "\x1b" or k == "\x05":
+            # esc, ctrl + t
+            if k == "\x1b" or k == '\x14': 
                 save_buffer(self.buffer, self.stdscr)
                 sys.exit(0)
+            # goto bottom if ctrl + n
+            elif k == "\x0e":
+                self.goto_bottom()
             elif k == "KEY_LEFT":
                 self.left()
             elif k == "KEY_DOWN":

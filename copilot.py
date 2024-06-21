@@ -176,7 +176,86 @@ class GeminiCopilot(Copilot):
         super().__init__(sliding_window, fill_len, system_prompt)
         self.model = model
         
-        
+    def get_message(self,text, suffix: str = ''):
+        message = []
+        default_user_prompt = "给我写一段小说"
+        message.append({"role": "user", "parts": [default_user_prompt]}) 
+
+        # we looks for each user prompt enclosed with "<user>" and "</user>" in a loop
+        # then, we iteratively add the user prompt to the message
+        # we also add everything in between the user prompts as model response
+        unprocessed_text = text
+        while True:
+            user_prompt_start = unprocessed_text.find("<user>")
+            user_prompt_end = unprocessed_text.find("</user>")
+            if user_prompt_start != -1:
+                if user_prompt_end != -1:
+                    user_prompt = unprocessed_text[user_prompt_start+len("<user>"):user_prompt_end]
+                    model_completion = unprocessed_text[:user_prompt_start]
+                    message.append({"role": "model", "parts": [model_completion]})
+                    message.append({"role": "user", "parts": [user_prompt]})
+                    unprocessed_text = unprocessed_text[user_prompt_end+len("</user>"):]
+                else: # unclosed user prompt. we ask model to complete the prompt
+                    message.append({"role": "model", "parts": [unprocessed_text[:user_prompt_start]]})
+                    
+                    unprocessed_text = unprocessed_text[user_prompt_start+len("<user>"):]
+                    # complete_prompt_prompt = '帮助用户编辑下一条prompt，根据已有的prompt补全。'
+                    complete_prompt_prompt = 'User has an unfinished prompt. Please help complete the prompt based on the existing prompt.'
+                    
+                    prompt = f'{complete_prompt_prompt}\nUser: {unprocessed_text}'
+
+                    last_paragraph_index = unprocessed_text.rfind("\n")
+                    # last_paragraph_index = max(unprocessed_text.rfind("\n"), unprocessed_text.rfind("。"))
+                    # start from the last ",", "，" ".", "?", '？', '\n', "。"
+                    # last_paragraph_index = max(
+                        # unprocessed_text[:-4].rfind(","), 
+                        # unprocessed_text[:-4].rfind("，"),
+                    #     unprocessed_text[:-4].rfind("."), 
+                        # unprocessed_text[:-4].rfind("?"),
+                        # unprocessed_text[:-4].rfind("？"),
+                        # unprocessed_text[:-4].rfind("\n"),
+                        # unprocessed_text[:-4].rfind("。")
+                    # )+1
+                    # prompt += f'\n从这里开始补全，不要重复前面：{unprocessed_text[last_paragraph_index:]}'
+                    prompt += f'\nStart from here, and do not repeat the previous content: {unprocessed_text[last_paragraph_index:]}'
+                    message.append({"role": "user", "parts": [prompt]})
+                    # message.append({"role": "user", "parts": [complete_prompt_prompt]})
+                    # message.append({"role": "model", "parts": [unprocessed_text]})
+
+                    return message
+                
+            else:
+                break
+        message.append({"role": "model", "parts": [unprocessed_text]})
+        """
+        # message.append({"role": "model", "parts": [text]})
+        # last_paragraph_index = text.rfind("\n")
+        last_paragraph_index = max(
+            # unprocessed_text.rfind(","), 
+            # unprocessed_text.rfind("，"),
+            unprocessed_text.rfind("."), 
+            unprocessed_text.rfind("?"),
+            unprocessed_text.rfind("？"),
+            unprocessed_text.rfind("\n"),
+            unprocessed_text.rfind("。")
+        )
+
+        if last_paragraph_index != -1:
+            # continuation_prompt = "继续，从这行开始：" 
+            continuation_prompt = "继续，从这行开始，不要重复再之前的内容。"
+            continuation_prompt += text[last_paragraph_index:]
+        else:
+            continuation_prompt = "继续"
+        message.append({"role": "user", "parts": [continuation_prompt]})
+        """
+        last_paragraph_index = text.rfind("\n")
+        if last_paragraph_index != -1:
+            continuation_prompt = "Continue from this line, do not repeat the previous content:\n"
+            continuation_prompt += text[last_paragraph_index:]
+        else:
+            continuation_prompt = "Continue"
+        message.append({"role": "user", "parts": [continuation_prompt]})
+        return message
     
     def __call__(self, text, suffix: str = '') -> str:
         if self.system_prompt:
@@ -185,19 +264,14 @@ class GeminiCopilot(Copilot):
         else:
             gen_model = genai.GenerativeModel(self.model)
 
-        # message = [{"role": "system", "parts": [self.system_prompt]}]
-        message = []
-        default_user_prompt = "给我写一段小说"
-        message.append({"role": "user", "parts": [default_user_prompt]}) 
-        message.append({"role": "model", "parts": [text]})
-        # we first find the last paragraph in the text. if there is, we use it in the continuation prompt
-        # else, we use the default continuation prompt
-        last_paragraph_index = text.rfind("\n\n")
-        if last_paragraph_index != -1:
-            continuation_prompt = "继续，从这里开始：" + text[last_paragraph_index:]
+        message = self.get_message(text, suffix)
+        prefill_message = message[-1]["parts"][0]
+        prefill_start = prefill_message.rfind("previous content:")
+        if prefill_start != -1:
+            prefill_message = prefill_message[prefill_start+len("previous content:"):]
         else:
-            continuation_prompt = "继续"
-        message.append({"role": "user", "parts": [continuation_prompt]})
+            prefill_message = ""
+        print_to_log ("message:"+ str(message))
         response = gen_model.generate_content(message,
                                               safety_settings={'HARASSMENT':'block_none',
                                                    'SEXUALLY_EXPLICIT': 'block_none',
@@ -206,16 +280,20 @@ class GeminiCopilot(Copilot):
                                               generation_config=genai.types.GenerationConfig(
                                                     # candidate_count=1,
                                                     # stop_sequences=['x'],
-                                                    max_output_tokens=self.fill_len+50,
+                                                    # max_output_tokens=self.fill_len,
+                                                    max_output_tokens=self.fill_len + len(prefill_message),
                                                     temperature=0.5)
                                               ).text
 
-        print_to_log ("message:"+ str(message))
+        
+        print_to_log ("max_token: "+ str(self.fill_len+len(prefill_message)))
         print_to_log ("response: "+ response)
+
+        # strip away "User: "
+        response = response.replace("User: ", "")
 
         overlap = check_overlap(text, response)
         response = response[overlap:]
-
         return response
 
 

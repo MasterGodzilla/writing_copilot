@@ -12,31 +12,22 @@ from editor import Editor
 locale.setlocale(locale.LC_ALL, '')
 
 def add_user_token(editor):
-    user_token = " user\n"
-    editor.buffer.insert(editor.cursor, user_token)
-    for _ in user_token:
-        editor.right()
+    user_token = "<user>"
+    editor.insert(user_token)
 
 def add_end_token(editor):
-    end_token = "\n"
-    editor.buffer.insert(editor.cursor, end_token)
-    for _ in end_token:
-        editor.right()
+    end_token = "</user>\n"
+    editor.insert(end_token)
 
 def copilot(editor, copilot):
     response = copilot(editor.buffer.prefix(editor.cursor), editor.buffer.suffix(editor.cursor))
     editor.draft_len = len(response)  # Update the draft_len attribute of the editor object
     editor.keep_draft = True  # Update the keep_draft attribute of the editor object
-    for char in response:
-        if char == "\n":
-            editor.buffer.split(editor.cursor)
-        else:
-            editor.buffer.insert(editor.cursor, char)
-        editor.right()
+    editor.insert(response)
 
-def remove_completion(editor):
+def remove_completion(editor, max_deletions=15):
     if editor.draft_len > 0:  # Access the draft_len attribute of the editor object
-        for _ in range(editor.draft_len):
+        for _ in range(min(editor.draft_len, max_deletions)):
             editor.left()
             editor.buffer.delete(editor.cursor)
             editor.draft_len -= 1
@@ -63,16 +54,29 @@ def parse_args():
     # parser.add_argument("--model_type", type=str, default="chat")
     parser.add_argument("--sliding_window", type=int, default=-1)
     parser.add_argument("--provider", type=str, default=None)
+    parser.add_argument('--system_prompt', type=str, default="")
+    parser.add_argument('--fill_len', type=int, default=7)
     return parser.parse_args()
 
+def get_system_prompt(system_prompt):
+    if system_prompt:
+        try:
+            with open(f'prompts/{system_prompt}.txt', 'r') as file:
+                return file.read()
+        except FileNotFoundError:
+            print(f"System prompt file {system_prompt}.txt not found.")
+            return ""
+    return ""
 
 def main(stdscr):
     args = parse_args()
-
+    system_prompt = get_system_prompt(args.system_prompt)
     # copilot_instance = TogetherCopilot(model="Qwen/Qwen2-72B-Instruct", model_type="chat", sliding_window=500)
     copilot_instance = get_copilot(model = args.model, 
                                     provider = args.provider, 
-                                    sliding_window = args.sliding_window)
+                                    sliding_window = args.sliding_window,
+                                    system_prompt = system_prompt,
+                                    fill_len = args.fill_len)
 
     keypresses_list = [
         {
