@@ -222,7 +222,7 @@ class GeminiCopilot(Copilot):
                     # message.append({"role": "user", "parts": [complete_prompt_prompt]})
                     # message.append({"role": "model", "parts": [unprocessed_text]})
 
-                    return message
+                    return message, len(unprocessed_text) - last_paragraph_index
                 
             else:
                 break
@@ -250,12 +250,14 @@ class GeminiCopilot(Copilot):
         """
         last_paragraph_index = text.rfind("\n")
         if last_paragraph_index != -1:
-            continuation_prompt = "Continue from this line, do not repeat the previous content:\n"
+            prefill_len = len(text) - last_paragraph_index
+            continuation_prompt = "Continue from this line, do not repeat the previous content nor the chapter title:\n"
             continuation_prompt += text[last_paragraph_index:]
         else:
+            prefill_len = 0
             continuation_prompt = "Continue"
         message.append({"role": "user", "parts": [continuation_prompt]})
-        return message
+        return message, prefill_len
     
     def __call__(self, text, suffix: str = '') -> str:
         if self.system_prompt:
@@ -264,13 +266,13 @@ class GeminiCopilot(Copilot):
         else:
             gen_model = genai.GenerativeModel(self.model)
 
-        message = self.get_message(text, suffix)
-        prefill_message = message[-1]["parts"][0]
-        prefill_start = prefill_message.rfind("previous content:")
-        if prefill_start != -1:
-            prefill_message = prefill_message[prefill_start+len("previous content:"):]
-        else:
-            prefill_message = ""
+        message, prefill_len = self.get_message(text, suffix)
+        # prefill_message = message[-1]["parts"][0]
+        # prefill_start = prefill_message.rfind("previous content:")
+        # if prefill_start != -1:
+        #     prefill_message = prefill_message[prefill_start+len("previous content:"):]
+        # else:
+        #     prefill_message = ""
         print_to_log ("message:"+ str(message))
         response = gen_model.generate_content(message,
                                               safety_settings={'HARASSMENT':'block_none',
@@ -281,19 +283,39 @@ class GeminiCopilot(Copilot):
                                                     # candidate_count=1,
                                                     # stop_sequences=['x'],
                                                     # max_output_tokens=self.fill_len,
-                                                    max_output_tokens=self.fill_len + len(prefill_message),
+                                                    max_output_tokens=self.fill_len + prefill_len,
                                                     temperature=0.5)
                                               ).text
 
         
-        print_to_log ("max_token: "+ str(self.fill_len+len(prefill_message)))
+        print_to_log ("max_token: "+ str(self.fill_len+prefill_len))
         print_to_log ("response: "+ response)
 
         # strip away "User: "
         response = response.replace("User: ", "")
 
         overlap = check_overlap(text, response)
+        print_to_log ("overlap length: "+ str(overlap))
         response = response[overlap:]
+
+        # strip away ...
+        if response[:3] == '...':
+            response = response[3:]
+
+        import regex
+
+        def correct_spacing(text):
+            # Regex pattern to match punctuation or Chinese characters followed by a space
+            # but not followed by a newline
+            pattern = regex.compile(r'([\p{P}\p{Han}])[ \t](?!\n)')
+            # Replace occurrences found by the pattern with the character without the space
+            corrected_text = regex.sub(pattern, r'\1', text)
+            return corrected_text
+
+
+        # Assuming the rest of the code is unchanged, apply the correction to the response:
+        response = correct_spacing(response)
+        
         return response
 
 
