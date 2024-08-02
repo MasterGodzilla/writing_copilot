@@ -82,12 +82,12 @@ def main(stdscr):
         {
             "key": ["\x15"],  # ctrl + u
             "func": add_user_token,
-            "description": "Add user token"
+            "description": "Add user token '<user>'"
         },
         {
             "key": ["\x05"],  # ctrl + e
             "func": add_end_token,
-            "description": "Add end token"
+            "description": "Add end token '</user>'"
         },
         {
             "key": ["\t"],  # tab for copilot
@@ -103,7 +103,7 @@ def main(stdscr):
         { 
             "key": ["KEY_DC", "KEY_BACKSPACE", "\x04", "\x7f", curses.KEY_BACKSPACE, curses.KEY_DC],
             "func": decrease_draft_len,
-            "description": ""
+            "description": "decrease draft_len"
         }
     ]
     

@@ -4,11 +4,7 @@ import os, asyncio
 from together import AsyncTogether, Together
 from typing import Union, List, Dict
 
-async_client = AsyncTogether(api_key=os.environ.get("TOGETHER_API_KEY"))
-messages = [
-    "What are the top things to do in San Francisco?",
-    "What country is Paris in?",
-]
+
 
 def chat_completion(message, 
                     model: str = "meta-llama/Llama-3-8b-chat-hf", 
@@ -91,6 +87,11 @@ def openai_completion(prompt: str,
     return response.choices[0].text
 
 if __name__ == "__main__":
+    async_client = AsyncTogether(api_key=os.environ.get("TOGETHER_API_KEY"))
+    messages = [
+        "What are the top things to do in San Francisco?",
+        "What country is Paris in?",
+    ]
     while True:
         prompt = input("Enter a prompt: ")
         result = completion(prompt)

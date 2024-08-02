@@ -31,7 +31,8 @@ def save_text(text, stdscr):
                     file_name = file_name[:-1]
     # if empty file name, do not save
     if len(file_name) > 1:
-        with open(f"text/{file_name.strip()}.txt", 'w') as file:
+        # with open(f"text/{file_name.strip()}.txt", 'w') as file:
+        with open(file_name.strip(), 'w') as file:
             file.write(text)
 
 def display_welcomepage(stdscr):
