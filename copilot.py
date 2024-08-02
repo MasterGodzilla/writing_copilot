@@ -166,7 +166,7 @@ import google.generativeai as genai
 import os
 genai.configure(api_key=os.environ.get('GOOGLE_API_KEY'))
 class GeminiCopilot(Copilot):
-    supported_models = ["gemini-1.5-flash", "gemini-1.5-pro"]
+    supported_models = ["gemini-1.5-flash", "gemini-1.5-pro", 'gemini-1.5-pro-exp-0801']
     def __init__(self, 
                     sliding_window: int = -1,
                     fill_len: int = 7,

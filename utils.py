@@ -58,3 +58,35 @@ press Enter to continue...
         key = stdscr.get_wch()
         if key == "\n":
             break
+
+
+import string
+
+def create_ascii_to_key_mapping():
+    mapping = {}
+    
+    # Standard printable ASCII characters
+    for char in string.printable:
+        mapping[ord(char)] = char
+    
+    # Control characters
+    ctrl_chars = {
+        1: 'Ctrl + A', 2: 'Ctrl + B', 3: 'Ctrl + C', 4: 'Ctrl + D', 5: 'Ctrl + E',
+        6: 'Ctrl + F', 7: 'Ctrl + G', 8: 'Ctrl + H', 9: 'Ctrl + I', 10: 'Ctrl + J',
+        11: 'Ctrl + K', 12: 'Ctrl + L', 13: 'Ctrl + M', 14: 'Ctrl + N', 15: 'Ctrl + O',
+        16: 'Ctrl + P', 17: 'Ctrl + Q', 18: 'Ctrl + R', 19: 'Ctrl + S', 20: 'Ctrl + T',
+        21: 'Ctrl + U', 22: 'Ctrl + V', 23: 'Ctrl + W', 24: 'Ctrl + X', 25: 'Ctrl + Y',
+        26: 'Ctrl + Z', 27: 'ESC', 28: 'FS', 29: 'GS', 30: 'RS', 31: 'US'
+    }
+    mapping.update(ctrl_chars)
+    
+    return mapping
+
+def ascii_to_key(ascii_code):
+    mapping = create_ascii_to_key_mapping()
+    return mapping.get(ascii_code, f"Unknown ({ascii_code})")
+
+# # Example usage
+# print(ascii_to_key(ord('\x14')))  # Output: Ctrl + T
+# print(ascii_to_key(ord('A')))     # Output: A
+# print(ascii_to_key(27))           # Output: ESC
