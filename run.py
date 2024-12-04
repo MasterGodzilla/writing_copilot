@@ -7,7 +7,7 @@ from typing import Union, List, Dict
 
 
 def chat_completion(message, 
-                    model: str = "meta-llama/Llama-3-8b-chat-hf", 
+                    model: str = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", 
                     temperature = 0.6,
                     max_tokens = 512,
                     stop=["</s>"]):

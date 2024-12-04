@@ -166,7 +166,8 @@ import google.generativeai as genai
 import os
 genai.configure(api_key=os.environ.get('GOOGLE_API_KEY'))
 class GeminiCopilot(Copilot):
-    supported_models = ["gemini-1.5-flash", "gemini-1.5-pro", 'gemini-1.5-pro-exp-0801']
+    supported_models = ["gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-1.5-flash", "gemini-1.5-pro", 
+                        'gemini-1.5-pro-exp-0801', 'gemini-exp-1121', 'gemini-exp-1114']
     def __init__(self, 
                     sliding_window: int = -1,
                     fill_len: int = 7,
@@ -178,8 +179,9 @@ class GeminiCopilot(Copilot):
         
     def get_message(self,text, suffix: str = ''):
         message = []
-        default_user_prompt = "给我写一段小说"
-        message.append({"role": "user", "parts": [default_user_prompt]}) 
+        if not text:
+            default_user_prompt = "给我写一段小说"
+            message.append({"role": "user", "parts": [default_user_prompt]}) 
 
         # we looks for each user prompt enclosed with "<user>" and "</user>" in a loop
         # then, we iteratively add the user prompt to the message
@@ -192,62 +194,31 @@ class GeminiCopilot(Copilot):
                 if user_prompt_end != -1:
                     user_prompt = unprocessed_text[user_prompt_start+len("<user>"):user_prompt_end]
                     model_completion = unprocessed_text[:user_prompt_start]
-                    message.append({"role": "model", "parts": [model_completion]})
+                    if model_completion:
+                        message.append({"role": "model", "parts": [model_completion]})
                     message.append({"role": "user", "parts": [user_prompt]})
                     unprocessed_text = unprocessed_text[user_prompt_end+len("</user>"):]
                 else: # unclosed user prompt. we ask model to complete the prompt
-                    message.append({"role": "model", "parts": [unprocessed_text[:user_prompt_start]]})
+                    if unprocessed_text[:user_prompt_start]:
+                        message.append({"role": "model", "parts": [unprocessed_text[:user_prompt_start]]})
                     
                     unprocessed_text = unprocessed_text[user_prompt_start+len("<user>"):]
                     # complete_prompt_prompt = '帮助用户编辑下一条prompt，根据已有的prompt补全。'
-                    complete_prompt_prompt = 'User has an unfinished prompt. Please help complete the prompt based on the existing prompt.'
+                    complete_prompt_prompt = 'User has an unfinished prompt. Please help complete the prompt based on the existing prompt. A prompt is an instruction or a plot line of the following story, not the story itself. Infos to include: 人物、剧情、风格、注意, etc.'
                     
                     prompt = f'{complete_prompt_prompt}\nUser: {unprocessed_text}'
 
                     last_paragraph_index = unprocessed_text.rfind("\n")
-                    # last_paragraph_index = max(unprocessed_text.rfind("\n"), unprocessed_text.rfind("。"))
-                    # start from the last ",", "，" ".", "?", '？', '\n', "。"
-                    # last_paragraph_index = max(
-                        # unprocessed_text[:-4].rfind(","), 
-                        # unprocessed_text[:-4].rfind("，"),
-                    #     unprocessed_text[:-4].rfind("."), 
-                        # unprocessed_text[:-4].rfind("?"),
-                        # unprocessed_text[:-4].rfind("？"),
-                        # unprocessed_text[:-4].rfind("\n"),
-                        # unprocessed_text[:-4].rfind("。")
-                    # )+1
-                    # prompt += f'\n从这里开始补全，不要重复前面：{unprocessed_text[last_paragraph_index:]}'
-                    prompt += f'\nStart from here, and do not repeat the previous content: {unprocessed_text[last_paragraph_index:]}'
+
+                    prompt += f'\nContinue from here, and do not repeat the previous content: {unprocessed_text[last_paragraph_index:]}'
                     message.append({"role": "user", "parts": [prompt]})
-                    # message.append({"role": "user", "parts": [complete_prompt_prompt]})
-                    # message.append({"role": "model", "parts": [unprocessed_text]})
 
                     return message, len(unprocessed_text) - last_paragraph_index
                 
             else:
                 break
         message.append({"role": "model", "parts": [unprocessed_text]})
-        """
-        # message.append({"role": "model", "parts": [text]})
-        # last_paragraph_index = text.rfind("\n")
-        last_paragraph_index = max(
-            # unprocessed_text.rfind(","), 
-            # unprocessed_text.rfind("，"),
-            unprocessed_text.rfind("."), 
-            unprocessed_text.rfind("?"),
-            unprocessed_text.rfind("？"),
-            unprocessed_text.rfind("\n"),
-            unprocessed_text.rfind("。")
-        )
 
-        if last_paragraph_index != -1:
-            # continuation_prompt = "继续，从这行开始：" 
-            continuation_prompt = "继续，从这行开始，不要重复再之前的内容。"
-            continuation_prompt += text[last_paragraph_index:]
-        else:
-            continuation_prompt = "继续"
-        message.append({"role": "user", "parts": [continuation_prompt]})
-        """
         last_paragraph_index = text.rfind("\n")
         if last_paragraph_index != -1:
             prefill_len = len(text) - last_paragraph_index
@@ -267,18 +238,15 @@ class GeminiCopilot(Copilot):
             gen_model = genai.GenerativeModel(self.model)
 
         message, prefill_len = self.get_message(text, suffix)
-        # prefill_message = message[-1]["parts"][0]
-        # prefill_start = prefill_message.rfind("previous content:")
-        # if prefill_start != -1:
-        #     prefill_message = prefill_message[prefill_start+len("previous content:"):]
-        # else:
-        #     prefill_message = ""
+
         print_to_log ("message:"+ str(message))
         response = gen_model.generate_content(message,
                                               safety_settings={'HARASSMENT':'block_none',
                                                    'SEXUALLY_EXPLICIT': 'block_none',
                                                    'HATE_SPEECH': 'block_none',
-                                                   'DANGEROUS': 'block_none',},
+                                                   'DANGEROUS': 'block_none',
+                                                   # 'CIVIC_INTEGRITY': 'block_none',
+                                                   },
                                               generation_config=genai.types.GenerationConfig(
                                                     # candidate_count=1,
                                                     # stop_sequences=['x'],

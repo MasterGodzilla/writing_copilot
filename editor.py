@@ -192,7 +192,7 @@ class Window:
 
 
 class Editor:
-    def __init__(self, stdscr, filename, keypresses_list = None, func_after_keypress = None, func_before_keypress = None):
+    def __init__(self, stdscr, filename, keypresses_list = [], func_after_keypress = None, func_before_keypress = None, auto_save=False):
         self.stdscr = stdscr
         self.window = Window(curses.LINES - 1, curses.COLS - 1)
         self.cursor = Cursor(n_cols = curses.COLS-1)
@@ -205,7 +205,7 @@ class Editor:
         self.func_after_keypress = func_after_keypress
         self.func_before_keypress = func_before_keypress
         self.saved = False
-
+        self.auto_save = auto_save
     def display_welcomepage(self):
         instructions = """
 - backspace or delete: delete the character before the cursor
@@ -294,7 +294,7 @@ class Editor:
         while self.cursor.row < self.buffer.bottom or self.cursor.col < len(self.buffer[self.cursor.row]):
             self.right()
     
-    def auto_save(self):
+    def save(self):
         if len(self.filename) > 1:
             text = "\n".join(self.buffer)
             with open(self.filename, 'w') as file:
@@ -326,7 +326,7 @@ class Editor:
                 sys.exit(0)
             # ctrl + t
             elif k == "\x14":
-                self.auto_save()
+                self.save()
             # goto bottom if ctrl + n
             elif k == "\x0e":
                 self.goto_bottom()
@@ -372,6 +372,7 @@ class Editor:
 
     def run(self):
         self.display_welcomepage()
+        ops = 0
         while True:
             self.display_buffer()
             self.translate_cursor()
@@ -381,10 +382,14 @@ class Editor:
             self.handle_keypress(k)
             if self.func_after_keypress:
                 self.func_after_keypress(self)
+            ops += 1
+            if self.auto_save and ops % 100 == 0:
+                self.save()
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("filename", nargs="?")
+    parser.add_argument("--auto-save", action="store_true", default=False)
     return parser.parse_args()
 
 def main(stdscr):
@@ -408,7 +413,8 @@ def main(stdscr):
     ]
     editor = Editor(stdscr, args.filename, keypresses_list, func_before_keypress=add_user_token)
     """
-    editor = Editor(stdscr, args.filename)
+
+    editor = Editor(stdscr, args.filename, auto_save=args.auto_save)
     editor.run()
 
 if __name__ == "__main__":

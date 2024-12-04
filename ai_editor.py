@@ -56,6 +56,7 @@ def parse_args():
     parser.add_argument("--provider", type=str, default=None)
     parser.add_argument('--system_prompt', type=str, default="")
     parser.add_argument('--fill_len', type=int, default=7)
+    parser.add_argument("--auto-save", action="store_true", default=False)
     return parser.parse_args()
 
 def get_system_prompt(system_prompt):
@@ -109,7 +110,8 @@ def main(stdscr):
     
     editor = Editor(stdscr, args.filename, keypresses_list, 
                     func_after_keypress=update_draft_len,
-                    func_before_keypress=set_keep_draft)
+                    func_before_keypress=set_keep_draft,
+                    auto_save=args.auto_save)
     editor.draft_len = 0  # Add a draft_len attribute to the editor object
     editor.keep_draft = False  # Add a keep_draft attribute to the editor object
     editor.run()

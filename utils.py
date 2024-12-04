@@ -34,6 +34,10 @@ def save_text(text, stdscr):
         # with open(f"text/{file_name.strip()}.txt", 'w') as file:
         with open(file_name.strip(), 'w') as file:
             file.write(text)
+            
+
+
+
 
 def display_welcomepage(stdscr):
     """
